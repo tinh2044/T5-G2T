@@ -1,0 +1,13 @@
+*.swp
+**/__pycache__/**
+Checkpoints/
+out/
+core*
+*.ipynb
+*.bin
+wandb
+demo/
+backup
+.history/
+__pycache__/
+.looks/
