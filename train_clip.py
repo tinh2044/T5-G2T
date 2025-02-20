@@ -1,12 +1,7 @@
 
 # *torch
-from pickletools import optimize
-
 import torch
 import torch.backends.cudnn as cudnn
-from torch.optim import lr_scheduler as scheduler
-from torch.nn.utils.rnn import pad_sequence
-from torch.nn import functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 
@@ -34,16 +29,11 @@ from typing import Iterable
 from loguru import logger
 
 
-# *metric
-from metrics import wer_list
 
 # *timm
 from timm.optim import create_optimizer
 from timm.scheduler import create_scheduler
 from timm.utils import NativeScaler
-from timm.loss import SoftTargetCrossEntropy
-
-from torchvision.utils import save_image, make_grid
 from PIL import Image
 
 from definition import *
@@ -52,7 +42,7 @@ from definition import *
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Visual-Language-Pretraining (VLP) scripts', add_help=False)
-    parser.add_argument('--batch-size', default=16, type=int)
+    parser.add_argument('--batch-size', default=4, type=int)
     parser.add_argument('--epochs', default=80, type=int)
 
 
@@ -117,7 +107,7 @@ def get_args_parser():
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
     parser.add_argument('--eval', action='store_true', help='Perform evaluation only')
-    parser.add_argument('--num_workers', default=8, type=int)
+    parser.add_argument('--num_workers', default=0, type=int)
     parser.add_argument('--pin-mem', action='store_true',
                         help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
     parser.add_argument('--no-pin-mem', action='store_false', dest='pin_mem',
@@ -132,6 +122,7 @@ def get_args_parser():
     return parser
 
 def main(args, config):
+    
     utils.init_distributed_mode(args)
     print(args)
 
@@ -181,8 +172,8 @@ def main(args, config):
     
     print(f"Creating model:")
     model = T5_CLIP(config=config)
-    model.to(device)
-    print(model)
+    model = model.to(device)
+    # print(model)
 
     if args.finetune:
         checkpoint = torch.load(args.finetune, map_location='cpu')
@@ -190,15 +181,11 @@ def main(args, config):
         print('Missing keys: \n', '\n'.join(ret.missing_keys))
         print('Unexpected keys: \n', '\n'.join(ret.unexpected_keys))
 
-    model_without_ddp = model
-    if args.distributed:
-        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
-        model_without_ddp = model.module
-    n_parameters = utils.count_parameters_in_MB(model_without_ddp)
+
+    n_parameters = utils.count_parameters_in_MB(model)
     print(f'number of params: {n_parameters}M')
 
-    optimizer = create_optimizer(args, model_without_ddp)
+    optimizer = create_optimizer(args, model)
     lr_scheduler, _ = create_scheduler(args, optimizer)
 
     criterion = utils.KLLoss()
@@ -207,17 +194,18 @@ def main(args, config):
     output_dir = Path(args.output_dir)
     if args.resume:
         checkpoint = torch.load(args.resume, map_location='cpu')
-        model_without_ddp.load_state_dict(checkpoint['model'], strict=True)
+        model.load_state_dict(checkpoint['model'], strict=True)
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             args.start_epoch = checkpoint['epoch'] + 1
 
     if args.eval:
-        if not args.resume:
-            logger.warning('Please specify the trained model: --resume /path/to/best_checkpoint.pth')
-        dev_stats = evaluate(args, dev_dataloader, model, criterion, args.start_epoch)
-        print(f"Dev loss of the network on the {len(dev_dataloader)} test videos: {dev_stats['loss']:.3f}")
+        print(f"Performing evaluation on the {len(dev_dataloader)} dev videos and {len(test_dataloader)} test videos")
+        if not args.finetune:
+            logger.warning('Please specify the trained model: --finetune /path/to/best_checkpoint.pth')
+        dev_stats = evaluate(args, train_dataloader, model, criterion, args.start_epoch)
+        print(f"Dev loss of the network on the {len(train_dataloader)} test videos: {dev_stats['loss']:.3f}")
 
         test_stats = evaluate(args, test_dataloader, model, criterion, args.start_epoch)
         print(f"Test loss of the network on the {len(test_dataloader)} test videos: {test_stats['loss']:.3f}")
@@ -337,9 +325,9 @@ def evaluate(args, dev_dataloader, model, criterion, epoch):
     loss_txt = criterion
 
     with torch.no_grad():
-        for step, (src_input, tgt_input) in enumerate(metric_logger.log_every(dev_dataloader, print_freq, header)):
+        for step, src_input in enumerate(metric_logger.log_every(dev_dataloader, print_freq, header)):
 
-            logits_per_image, logits_per_text, ground_truth = model(src_input, tgt_input)
+            logits_per_image, logits_per_text, ground_truth = model(src_input)
             loss_imgs = loss_img(logits_per_image, ground_truth)
             loss_texts = loss_txt(logits_per_text, ground_truth)
             total_loss = (loss_imgs + loss_texts)/2

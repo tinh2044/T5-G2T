@@ -120,10 +120,10 @@ class TextCLIP(nn.Module):
         super(TextCLIP, self).__init__()
 
         self.model_txt = T5ForConditionalGeneration.from_pretrained(config['model']['transformer'], cache_dir="./").get_encoder() 
-
-        self.lm_head = make_head(inplanes, planes, head_type)
+        self.lm_head = make_head(self.model_txt.config.d_model, planes, head_type)
 
     def forward(self, input_ids, attention_mask):
+        
         txt_logits = self.model_txt(input_ids=input_ids, attention_mask=attention_mask)[0]
         output = txt_logits[torch.arange(txt_logits.shape[0]), input_ids.argmax(dim=-1)]
         return self.lm_head(output), txt_logits
@@ -178,12 +178,24 @@ class Text_Decoder(nn.Module):
 
         return lm_logits
     
-        
+class T5_Model(nn.Module):
+    def __init__(self, config=None, inplanes=1024, planes=1024, head_type='linear'):
+        super(T5_Model, self).__init__()
+
+        self.model_txt = T5ForConditionalGeneration.from_pretrained(config['model']['transformer'], cache_dir="./") 
+        self.model_txt.lm_head = nn.Identity()
+        self.lm_head = make_head(self.model_txt.config.d_model, planes, head_type)
+
+    def forward(self, input_ids, attention_mask):
+        txt_logits = self.model_txt(input_ids=input_ids, attention_mask=attention_mask, 
+                                    decoder_input_ids=input_ids, decoder_attention_mask=attention_mask)[0]
+        output = txt_logits[torch.arange(txt_logits.shape[0]), input_ids.argmax(dim=-1)]
+        return self.lm_head(output), txt_logits
 class T5_CLIP(nn.Module):
     def __init__(self, config, embed_dim=1024) :
         super(T5_CLIP, self).__init__()
-        self.model_gloss = TextCLIP(config, inplanes=embed_dim, planes=embed_dim)
-        self.model_text = TextCLIP(config, inplanes=embed_dim, planes=embed_dim)
+        self.model_gloss = T5_Model(config, inplanes=embed_dim, planes=embed_dim)
+        self.model_text = TextCLIP(config, inplanes=embed_dim, planes=embed_dim, head_type="linear")
 
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
@@ -195,19 +207,19 @@ class T5_CLIP(nn.Module):
         return self.encoder_hidden_states
     
     def forward(self, src_input):
-        image_features, _ = self.model_gloss(src_input['gloss_ids'], src_input['attention_mask'])
+        gloss_features, _ = self.model_gloss(src_input['gloss_ids'], src_input['attention_mask'])
         text_features, self.encoder_hidden_states = self.model_text(src_input['labels'], src_input['labels_attention_mask'])
 
-        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        gloss_features = gloss_features / gloss_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
         logit_scale = self.logit_scale.exp()
-        logits_per_image = logit_scale * image_features @ text_features.t()
-        logits_per_text = logit_scale * text_features @ image_features.t()
+        logits_per_gloss = logit_scale * gloss_features @ text_features.t()
+        logits_per_text = logit_scale * text_features @ gloss_features.t()
 
-        ground_truth = torch.eye(logits_per_image.shape[0], device=logits_per_text.device, dtype=logits_per_image.dtype, requires_grad=False)
+        ground_truth = torch.eye(logits_per_gloss.shape[0], device=logits_per_text.device, dtype=logits_per_gloss.dtype, requires_grad=False)
 
-        return logits_per_image, logits_per_text, ground_truth
+        return logits_per_gloss, logits_per_text, ground_truth
 
 class FeatureExtracter(nn.Module):
     def __init__(self, frozen=False):

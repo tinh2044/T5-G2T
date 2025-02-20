@@ -11,3 +11,4 @@ backup
 .history/
 __pycache__/
 .looks/
+models--google-t5--t5-base/

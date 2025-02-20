@@ -507,7 +507,7 @@ class KLLoss(torch.nn.Module):
         clip:  Clip the loss if it is above this value.
     """
 
-    def __init__(self, error_metric=torch.nn.KLDivLoss(size_average=True, reduce=True)):
+    def __init__(self, error_metric=torch.nn.KLDivLoss(reduction="batchmean")):
         super().__init__()
         print('=========using KL Loss=and has temperature and * bz==========')
         self.error_metric = error_metric

@@ -269,11 +269,11 @@ class G2T_Dataset(Dataset.Dataset):
         outputs = {}
         gloss_batch = self.process_gloss(gloss_batch)
         
-        gloss_output = self.tokenizer(gloss_batch, return_tensors="pt", padding=True, truncation=True)
+        gloss_output = self.tokenizer(gloss_batch, return_tensors="pt", padding="longest")
         outputs['gloss_ids'] = gloss_output['input_ids']
         outputs['attention_mask'] = gloss_output['attention_mask']
         
-        text_ouput = self.tokenizer(text_batch, return_tensors="pt",padding = True,  truncation=True)
+        text_ouput = self.tokenizer(text_batch, return_tensors="pt", padding ="longest")
         outputs['labels_attention_mask'] = text_ouput['attention_mask']
         outputs['labels'] = text_ouput['input_ids']
 
