@@ -21,27 +21,14 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
-from torchvision.utils import save_image, make_grid
-import cv2
-
-import torch.nn.functional as nnf
-from einops import rearrange, repeat
 import pickle
 import gzip
 
-try:
-    from torchtext.vocab import build_vocab_from_iterator
-except:
-    pass
 from itertools import groupby
 import tensorflow as tf
 
-import matplotlib.pyplot as plt  # For graphics
+import matplotlib.pyplot as plt  
 import seaborn as sns
-from torchvision.utils import save_image, make_grid
-
-# global definition
-from definition import *
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
@@ -299,10 +286,6 @@ def load_dataset_file(filename):
         loaded_object = pickle.load(f)
         return loaded_object
 
-def build_vocab(file_path,UNK_IDX,specials_symbols):
-    vocab = build_vocab_from_iterator(yield_tokens(file_path), specials=specials_symbols,min_freq=1)
-    vocab.set_default_index(UNK_IDX)
-    return vocab
 
 def yield_tokens(file_path):
     with io.open(file_path, encoding = 'utf-8') as f:

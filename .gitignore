@@ -12,3 +12,6 @@ backup
 __pycache__/
 .looks/
 models--google-t5--t5-base/
+models--t5-base/
+outputs/
+.locks/

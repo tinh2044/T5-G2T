@@ -66,9 +66,4 @@ python ./train_clip.py \
     --device $DEVICE \
     --seed $SEED \
     --resume $RESUME \
-    --start_epoch $START_EPOCH \
-    $EVAL \
     --num_workers $NUM_WORKERS \
-    $PIN_MEM \
-    --input-size $INPUT_SIZE \
-    --resize $RESIZE

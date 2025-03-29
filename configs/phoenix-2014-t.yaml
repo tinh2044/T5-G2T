@@ -2,10 +2,9 @@ name: T5-S2T
 data:
   path: ./data/Phoenxi-2014-T
 training:
-  wandb: disabled # online or disabled
+  wandb: disabled
   scale_embedding: False
 model:
   tokenizer: google-t5/t5-base
   transformer: google-t5/t5-base
-  visual_encoder: ./pretrain_models/mytran
   sign_proj: True

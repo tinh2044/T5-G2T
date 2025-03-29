@@ -1,6 +1,3 @@
-# *torch
-from pickletools import optimize
-# from sched import scheduler
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
@@ -10,38 +7,30 @@ from torch.nn.utils.rnn import pad_sequence
 
 
 # *transformers
-from transformers import MBartForConditionalGeneration, MBartTokenizer,MBartConfig
-from transformers.models.mbart.modeling_mbart import shift_tokens_right
+from transformers import T5Tokenizer
 
-# *user-defined
+
 from models import gloss_free_model
-from datasets import S2T_Dataset
+from datasets import G2T_Dataset
 import utils as utils
 
 # *basic
 import os
 import time
-import shutil
 import argparse, json, datetime
 import numpy as np
 from collections import OrderedDict
-from tqdm import tqdm
 import yaml
 import random
 import test as test
-import wandb
-import copy
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable
 import math, sys
 from loguru import logger
 
-from hpman.m import _
-import hpargparse
 
-# *metric
 from metrics import wer_list
-from sacrebleu.metrics import BLEU, CHRF, TER
+from metrics import BLEU, CHRF, TER
 try:
     from nlgeval import compute_metrics
 except:
@@ -55,30 +44,21 @@ from timm.data import Mixup
 from timm.loss import SoftTargetCrossEntropy
 from timm.utils import NativeScaler
 
-# global definition
-from definition import *
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Gloss-free Sign Language Translation script', add_help=False)
     parser.add_argument('--batch-size', default=16, type=int)
     parser.add_argument('--epochs', default=80, type=int)
 
-    # * distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
     parser.add_argument('--local_rank', default=0, type=int)
 
-    # * Finetuning params
     parser.add_argument('--finetune', default='', help='finetune from checkpoint')
 
-    # * Optimizer parameters
     parser.add_argument('--opt', default='adamw', type=str, metavar='OPTIMIZER',
                         help='Optimizer (default: "adamw"')
-    parser.add_argument('--opt-eps', default=1.0e-09, type=float, metavar='EPSILON',
-                        help='Optimizer Epsilon (default: 1.0e-09)')
-    parser.add_argument('--opt-betas', default=None, type=float, nargs='+', metavar='BETA',
-                        help='Optimizer Betas (default: None, use opt default)')
     parser.add_argument('--clip-grad', type=float, default=None, metavar='NORM',
                         help='Clip gradient norm (default: None, no clipping)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
@@ -86,17 +66,11 @@ def get_args_parser():
     parser.add_argument('--weight-decay', type=float, default=0.001,
                         help='weight decay (default: 0.05)')
 
-    # * Learning rate schedule parameters
     parser.add_argument('--sched', default='cosine', type=str, metavar='SCHEDULER',
                         help='LR scheduler (default: "cosine"')
     parser.add_argument('--lr', type=float, default=1.0e-3, metavar='LR',
                         help='learning rate (default: 5e-4)')
-    parser.add_argument('--lr-noise', type=float, nargs='+', default=None, metavar='pct, pct',
-                        help='learning rate noise on/off epoch percentages')
-    parser.add_argument('--lr-noise-pct', type=float, default=0.67, metavar='PERCENT',
-                        help='learning rate noise limit percent (default: 0.67)')
-    parser.add_argument('--lr-noise-std', type=float, default=1.0, metavar='STDDEV',
-                        help='learning rate noise std-dev (default: 1.0)')
+  
     parser.add_argument('--warmup-lr', type=float, default=1e-6, metavar='LR',
                         help='warmup learning rate (default: 1e-6)')
     parser.add_argument('--min-lr', type=float, default=1.0e-08, metavar='LR',
@@ -113,7 +87,6 @@ def get_args_parser():
     parser.add_argument('--decay-rate', '--dr', type=float, default=0.1, metavar='RATE',
                         help='LR decay rate (default: 0.1)')
     
-     # * Baise params
     parser.add_argument('--output_dir', default='',
                         help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cuda',
@@ -132,13 +105,11 @@ def get_args_parser():
     parser.set_defaults(pin_mem=True)
     parser.add_argument('--config', type=str, default='./configs/config_gloss_free.yaml')
 
-    # *Drop out params
     parser.add_argument('--drop', type=float, default=0.0, metavar='PCT',
                         help='Dropout rate (default: 0.)')
     parser.add_argument('--drop-path', type=float, default=0.1, metavar='PCT',
                         help='Drop path rate (default: 0.1)')
     
-    # * Mixup params
     parser.add_argument('--mixup', type=float, default=0.0,
                         help='mixup alpha, mixup enabled if > 0. (default: 0.8)')
     parser.add_argument('--cutmix', type=float, default=0.0,
@@ -152,11 +123,6 @@ def get_args_parser():
     parser.add_argument('--mixup-mode', type=str, default='batch',
                         help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
     
-    # * data process params
-    parser.add_argument('--input-size', default=224, type=int)
-    parser.add_argument('--resize', default=256, type=int)
-    
-    # * visualization
     parser.add_argument('--visualize', action='store_true')
 
     return parser
@@ -167,49 +133,46 @@ def main(args, config):
 
     device = torch.device(args.device)
 
-    # fix the seed for reproducibility
     seed = args.seed + utils.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
     cudnn.benchmark = False
 
-    print(f"Creating dataset:")
-    tokenizer = MBartTokenizer.from_pretrained(config['model']['tokenizer'])
-
-    train_data = S2T_Dataset(path=config['data']['train_label_path'], tokenizer = tokenizer, config=config, args=args, phase='train')
+    train_data = G2T_Dataset(path=config['data']['path'], tokenizer = tokenizer, config=config, args=args, phase='train')
     print(train_data)
-    train_sampler = torch.utils.data.distributed.DistributedSampler(train_data,shuffle=True)
+    # train_sampler = torch.utils.data.distributed.DistributedSampler(train_data,shuffle=True)
     train_dataloader = DataLoader(train_data,
                                  batch_size=args.batch_size, 
                                  num_workers=args.num_workers, 
                                  collate_fn=train_data.collate_fn,
-                                 sampler=train_sampler, 
-                                 pin_memory=args.pin_mem)
+                                #  sampler=train_sampler, 
+                                 pin_memory=args.pin_mem,
+                                 drop_last=True)
     
     
-    dev_data = S2T_Dataset(path=config['data']['dev_label_path'], tokenizer = tokenizer, config=config, args=args, phase='val')
+    dev_data = G2T_Dataset(path=config['data']['path'], tokenizer = tokenizer, config=config, args=args, phase='dev')
     print(dev_data)
-    dev_sampler = torch.utils.data.distributed.DistributedSampler(dev_data,shuffle=False)
+    # dev_sampler = torch.utils.data.distributed.DistributedSampler(dev_data,shuffle=False)
     dev_dataloader = DataLoader(dev_data,
                                  batch_size=args.batch_size,
                                  num_workers=args.num_workers, 
                                  collate_fn=dev_data.collate_fn,
-                                 sampler=dev_sampler, 
+                                #  sampler=dev_sampler, 
                                  pin_memory=args.pin_mem)
-    
-    test_data = S2T_Dataset(path=config['data']['test_label_path'], tokenizer = tokenizer, config=config, args=args, phase='test')
+
+    test_data = G2T_Dataset(path=config['data']['path'], tokenizer = tokenizer, config=config, args=args, phase='test')
     print(test_data)
-    test_sampler = torch.utils.data.distributed.DistributedSampler(test_data,shuffle=False)
+    # test_sampler = torch.utils.data.distributed.DistributedSampler(test_data,shuffle=False)
     test_dataloader = DataLoader(test_data,
                                  batch_size=args.batch_size,
                                  num_workers=args.num_workers, 
                                  collate_fn=test_data.collate_fn,
-                                 sampler=test_sampler, 
+                                #  sampler=test_sampler, 
                                  pin_memory=args.pin_mem)
     
     print(f"Creating model:")
-    tokenizer = MBartTokenizer.from_pretrained(config['model']['tokenizer'], src_lang = 'de_DE', tgt_lang = 'de_DE')
+    tokenizer = T5Tokenizer.from_pretrained(config['model']['tokenizer'])
     model = gloss_free_model(config, args)
     model.to(device)
     print(model)
@@ -266,7 +229,7 @@ def main(args, config):
     loss_scaler = NativeScaler()
 
     mixup_fn = None
-    mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None
+    mixup_active = args.mixup > 0 or args.cutmix > 0. or args.cutmix_minmax is not None 
     if mixup_active:
         mixup_fn = Mixup(
             mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
@@ -304,7 +267,6 @@ def main(args, config):
     for epoch in range(args.start_epoch, args.epochs):
         
         if args.distributed:
-            train_sampler.set_epoch(epoch)
         
         train_stats = train_one_epoch(args, model, criterion, train_dataloader, optimizer, device, epoch, config, loss_scaler, mixup_fn)
         lr_scheduler.step(epoch)
@@ -478,21 +440,11 @@ if __name__ == '__main__':
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    parser = argparse.ArgumentParser('Gloss-free Sign Language Translation script', parents=[get_args_parser()])
-    _.parse_file(Path(__file__).resolve().parent)
-    hpargparse.bind(parser, _)
+    parser = argparse.ArgumentParser('Gloss Sign Language Translation script', parents=[get_args_parser()])
     args = parser.parse_args()
 
     with open(args.config, 'r+',encoding='utf-8') as f:
         config = yaml.load(f,Loader=yaml.FullLoader)
-    
-    os.environ["WANDB_MODE"] = config['training']['wandb'] if not args.eval else 'disabled'
-    if utils.is_main_process():
-        wandb.init(project='GF-SLT',config=config)
-        wandb.run.name = args.output_dir.split('/')[-1]
-        wandb.define_metric("epoch")
-        wandb.define_metric("training/*", step_metric="epoch")
-        wandb.define_metric("dev/*", step_metric="epoch")
     
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
