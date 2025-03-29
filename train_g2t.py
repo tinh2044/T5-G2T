@@ -354,7 +354,7 @@ def evaluate(args, dev_dataloader, model, criterion, epoch, logger: Logger, outp
         
         
     metric_logger.synchronize_between_processes()
-    logger.info("* Averaged stats:", metric_logger)
+    logger.info(f"* Averaged stats: {metric_logger}")
     logger.info('* DEV loss {losses.global_avg:.3f}'.format(losses=metric_logger.loss))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
