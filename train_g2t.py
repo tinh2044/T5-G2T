@@ -111,6 +111,21 @@ def main(args, config):
 
     logger.info(f"Creating dataset:")
     tokenizer = T5Tokenizer.from_pretrained(config['model']['tokenizer'])
+    
+    print(f"Creating model:")
+    model = GlossTextCLIP(config=config, task="g2t")
+    model = model.to(device)
+    logger.info(model)
+    
+    model_logger = ModelLogger(
+        log_dir=args.output_dir, prefix="modellog", 
+        model=model, 
+        input_size = ((args.batch_size, 128),
+                      (args.batch_size, 128),
+                      (args.batch_size, 128),
+                    (args.batch_size, 128),
+        )
+    )
 
     train_data = G2T_Dataset(path=config['data']['path'], tokenizer = tokenizer, config=config, args=args, phase='train')
     logger.info("Train dataset: ")
@@ -144,20 +159,7 @@ def main(args, config):
                                  collate_fn=test_data.collate_fn,
                                  pin_memory=True)
     
-    print(f"Creating model:")
-    model = GlossTextCLIP(config=config, task="g2t")
-    model = model.to(device)
-    logger.info(model)
-    
-    model_logger = ModelLogger(
-        log_dir=args.output_dir, prefix="modellog", 
-        model=model, 
-        input_size = [(args.batch_size, 128),
-                      (args.batch_size, 128),
-                      (args.batch_size, 128),
-                    (args.batch_size, 128),
-        ]
-    )
+
 
     if args.finetune != '':
         checkpoint = torch.load(args.finetune, map_location='cpu')

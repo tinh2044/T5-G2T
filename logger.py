@@ -28,17 +28,7 @@ class SmoothedValue(object):
         self.total += value * n
 
     def synchronize_between_processes(self):
-        """
-        Warning: does not synchronize the deque!
-        """
-        if not is_dist_avail_and_initialized():
-            return
-        t = torch.tensor([self.count, self.total], dtype=torch.float64, device='cuda')
-        dist.barrier()
-        dist.all_reduce(t)
-        t = t.tolist()
-        self.count = int(t[0])
-        self.total = t[1]
+        return 
 
     @property
     def median(self):
@@ -164,12 +154,6 @@ from loguru import logger
 
 class Logger:
     def __init__(self, log_dir="logs", prefix="logfile"):
-        """
-        Khởi tạo Logger hỗ trợ live writing.
-        
-        - log_dir: Thư mục lưu file log.
-        - prefix: Tên file log, sẽ tự động thêm timestamp.
-        """
         os.makedirs(log_dir, exist_ok=True)  # Tạo thư mục nếu chưa có
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -236,6 +220,10 @@ class ModelLogger:
 
         if model:
             self.log_model_summary()
+            sample = []
+            for i in range(len(input_size)):
+                sample.append(torch.randint(0, 5, (input_size[i])))
+            # self.visualize_computational_graph(sample)
 
     def log_model_summary(self):
         if not self.model:
@@ -263,7 +251,7 @@ class ModelLogger:
     def visualize_computational_graph(self, sample_input):
         if not self.model:
             return
-        output = self.model(sample_input)
+        output = self.model(*sample_input)
         graph = make_dot(output, params=dict(self.model.named_parameters()))
         graph.render(f"{self.log_dir}/model_graph", format="png", cleanup=True)
         self.write("Computational graph đã được lưu tại 'model_graph.png'")
