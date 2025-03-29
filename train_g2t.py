@@ -205,13 +205,13 @@ def main(args, config):
         print(f"Performing evaluation on the {len(dev_dataloader)} dev videos and {len(test_dataloader)} test videos")
         if not args.finetune:
             logger.warning('Please specify the trained model: --finetune /path/to/best_checkpoint.pth')
-        dev_stats = evaluate(args, dev_dataloader, model, criterion, start_epoch, logger)
+        dev_stats = evaluate(tokenizer, dev_dataloader, model, criterion, start_epoch, logger)
         logger.info(f"Dev loss of the network on the {len(dev_dataloader)} test videos: {dev_stats['loss']:.3f}")
 
-        test_stats = evaluate(args, test_dataloader, model, criterion, start_epoch, logger)
+        test_stats = evaluate(tokenizer, test_dataloader, model, criterion, start_epoch, logger)
         logger.info(f"Test loss of the network on the {len(test_dataloader)} test videos: {test_stats['loss']:.3f}")
         
-        train_stats = evaluate(args, train_dataloader, model, criterion, start_epoch, logger)
+        train_stats = evaluate(tokenizer, train_dataloader, model, criterion, start_epoch, logger)
         logger.info(f"Train loss of the network on the {len(train_dataloader)} test videos: {train_stats['loss']:.3f}")        
         return
 
@@ -236,7 +236,7 @@ def main(args, config):
                     'epoch': epoch,
                 }, checkpoint_path)
 
-        dev_stats = evaluate(args, dev_dataloader, model, criterion, epoch, logger)
+        dev_stats = evaluate(tokenizer, dev_dataloader, model, criterion, epoch, logger)
 
         if min_loss > dev_stats["loss"]:
             min_loss = dev_stats["loss"]
@@ -304,7 +304,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: nn.CrossEntropyLoss
 
     return  {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
-def evaluate(args, dev_dataloader, model, criterion, epoch, logger: Logger, output_path=None):
+def evaluate(tokenizer, dev_dataloader, model, criterion, epoch, logger: Logger, output_path=None):
     model.eval()
 
     header = 'Test: '
@@ -315,7 +315,6 @@ def evaluate(args, dev_dataloader, model, criterion, epoch, logger: Logger, outp
     with torch.no_grad():
         results = dict()
         for step, src_input in enumerate(metric_logger.log_every(dev_dataloader, print_freq)):
-
             logits = model(src_input=src_input)
             logits = logits.view(-1, logits.size(-1))  # [batch_size * seq_length, vocab_size]
             labels = src_input['labels'].view(-1)  # [batch_size * seq_length]
@@ -324,10 +323,12 @@ def evaluate(args, dev_dataloader, model, criterion, epoch, logger: Logger, outp
 
             generate_outputs = model.generate(src_input, num_beams=5, device=logits.device)
             
+            txt_hyps = tokenizer.batch_decode(generate_outputs, skip_special_tokens=True)
+            
             for name, txt_hyp, txt_ref in zip(src_input['name_batch'], 
-                                              generate_outputs, 
+                                              txt_hyps, 
                                               src_input['text_inputs']):
-                
+               
                 results[name] = {
                     'hyp' : txt_hyp,
                     'ref' : txt_ref
