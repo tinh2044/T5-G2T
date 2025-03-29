@@ -339,8 +339,8 @@ def evaluate(args, dev_dataloader, model, criterion, epoch, logger: Logger, outp
         
         txt_hyp = [results[n]['hyp'] for n in results]
         txt_ref = [results[n]['ref'] for n in results]
-        bleu_dict = bleu(references=txt_ref, hypotheses=txt_hyp, level=word)
-        rouge_score = rouge(references=txt_ref, hypotheses=txt_hyp, level=word)
+        bleu_dict = bleu(references=txt_ref, hypotheses=txt_hyp, level="word")
+        rouge_score = rouge(references=txt_ref, hypotheses=txt_hyp, level="word")
         for k, v in bleu_dict.items():
             logger.info('{} {:.2f}'.format(k, v))
         logger.info('ROUGE: {:.2f}'.format(rouge_score))
