@@ -322,7 +322,7 @@ def evaluate(args, dev_dataloader, model, criterion, epoch, logger: Logger, outp
             loss = criterion(logits, labels.to(logits.device, non_blocking=True))
             metric_logger.update(loss=loss.item())
 
-            generate_outputs = model.generate(src_input, num_beams=5)
+            generate_outputs = model.generate(src_input, num_beams=5, device=logits.device)
             
             for name, txt_hyp, txt_ref in zip(src_input['name_batch'], 
                                               generate_outputs, 
