@@ -128,7 +128,7 @@ class GlossTextCLIP(nn.Module):
         else:
             raise NotImplementedError(f"Task {self.task} is not supported")
     def generate(self,src_input, num_beams ):
-        out = self.model_gloss.generate(src_input['gloss_ids'], num_beams=num_beams)
+        out = self.model_gloss.generate(src_input['gloss_ids'].to(self.model_gloss.device), num_beams=num_beams)
         return out
     
     def __str__(self):
