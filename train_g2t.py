@@ -17,15 +17,13 @@ import random
 from pathlib import Path
 import math
 import sys, json
-from typing import Iterable
 from metrics import bleu, rouge
 
 
 from timm.optim import create_optimizer
 from timm.scheduler import create_scheduler
-from timm.utils import NativeScaler
-
-from logger import MetricLogger, Logger
+from utils import NativeScaler
+from logger import MetricLogger, Logger, ModelLogger, SmoothedValue
 
 
 
@@ -97,13 +95,15 @@ def main(args, config):
     
     utils.init_distributed_mode(args)
     logger.info(json.dumps(vars(args), indent=4))
-
+    
 
     seed = args.seed + utils.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
     cudnn.benchmark = False 
+    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     
     device = torch.device(args.device)
     logger.info(f"Device: {device}")
@@ -147,12 +147,25 @@ def main(args, config):
     print(f"Creating model:")
     model = GlossTextCLIP(config=config, task="g2t")
     model = model.to(device)
-    
     logger.info(model)
+    
+    model_logger = ModelLogger(
+        log_dir=args.output_dir, prefix="modellog", 
+        model=model, 
+        input_size = [(args.batch_size, 128),
+                      (args.batch_size, 128),
+                      (args.batch_size, 128),
+                    (args.batch_size, 128),
+        ]
+    )
 
-    if args.finetune:
+    if args.finetune != '':
         checkpoint = torch.load(args.finetune, map_location='cpu')
-        ret =  model.load_state_dict(checkpoint['model'], strict=False)
+        state_dict = checkpoint['model']
+        for key in list(state_dict.keys()):
+            if "model_text" in key:
+                state_dict.pop(key, None)
+        ret =  model.load_state_dict(state_dict, strict=False)
         logger.warning('Missing keys: \n' + '\n'.join(ret.missing_keys))
         logger.warning('Unexpected keys: \n' + '\n'.join(ret.unexpected_keys))
 
@@ -172,10 +185,16 @@ def main(args, config):
     if args.resume:
         logger.info(f'Resuming training from {args.resume}')
         checkpoint = torch.load(args.resume, map_location='cpu')
+        state_dict = checkpoint['model']
+        for key in list(state_dict.keys()):
+            if "model_text" in key:
+                state_dict.pop(key, None)
+        ret =  model.load_state_dict(state_dict, strict=False)
         logger.warning('Missing keys: \n' + '\n'.join(ret.missing_keys))
         logger.warning('Unexpected keys: \n' + '\n'.join(ret.unexpected_keys))
-        model.load_state_dict(checkpoint['model'], strict=True)
+        
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
+            logger.info(f'Resuming optimizer from {args.resume}')
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
             start_epoch = checkpoint['epoch'] + 1
@@ -201,7 +220,7 @@ def main(args, config):
         
         train_stats = train_one_epoch(args, model, criterion, 
                               train_dataloader, optimizer, 
-                              epoch, loss_scaler, logger)
+                              epoch, loss_scaler, logger, model_logger)
 
         lr_scheduler.step(epoch)
 
@@ -243,27 +262,30 @@ def main(args, config):
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+    model_logger.save_and_visualize_model(filename=f"{args.output_dir}/model.onnx")
     logger.info('Training time {}'.format(total_time_str))
+    
+    model_logger.close()
 
 def train_one_epoch(args, model: torch.nn.Module, criterion: nn.CrossEntropyLoss,
                     data_loader, optimizer: torch.optim.Optimizer,
-                    epoch: int, loss_scaler, logger:Logger):
+                    epoch: int, loss_scaler, logger:Logger, model_logger: ModelLogger):
     model.train(True)
 
     header = 'Train epoch: [{}/{}]'.format(epoch, args.epochs)
     metric_logger = MetricLogger(delimiter=", ", header=header, logger=logger)
-    metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
+    metric_logger.add_meter('lr', SmoothedValue(window_size=1, fmt='{value:.6f}'))
     print_freq = 10
 
     for step, src_input in enumerate(metric_logger.log_every(data_loader, print_freq)):
 
         optimizer.zero_grad()
         
-        logits = model(src_input)
+        logits = model(src_input=src_input)
         logits = logits.view(-1, logits.size(-1))  # [batch_size * seq_length, vocab_size]
         labels = src_input['labels'].view(-1)  # [batch_size * seq_length]
         loss = criterion(logits, labels.to(logits.device, non_blocking=True))
-        loss_scaler(loss, optimizer)
+        loss_scaler(loss, optimizer, epoch, logger=model_logger)
 
         loss_value = loss.item()
         if not math.isfinite(loss_value):
@@ -273,9 +295,7 @@ def train_one_epoch(args, model: torch.nn.Module, criterion: nn.CrossEntropyLoss
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
 
-        # if (step+1) % 10 == 0:
-        #     visual_map = torch.cat((logits_per_image.unsqueeze(0), logits_per_text.unsqueeze(0)))
-        #     utils.visualization([visual_map,])
+        model_logger.log_loss(loss_value, step)
             
     metric_logger.synchronize_between_processes()
     logger.info("Averaged stats:", metric_logger)
@@ -294,7 +314,7 @@ def evaluate(args, dev_dataloader, model, criterion, epoch, logger: Logger, outp
         results = dict()
         for step, src_input in enumerate(metric_logger.log_every(dev_dataloader, print_freq)):
 
-            logits = model(src_input)
+            logits = model(src_input=src_input)
             logits = logits.view(-1, logits.size(-1))  # [batch_size * seq_length, vocab_size]
             labels = src_input['labels'].view(-1)  # [batch_size * seq_length]
             loss = criterion(logits, labels.to(logits.device, non_blocking=True))

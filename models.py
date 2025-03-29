@@ -97,20 +97,34 @@ class GlossTextCLIP(nn.Module):
 
         return logits_per_gloss, logits_per_text, ground_truth
     
-    def forward_g2t(self, src_input, **kwargs):
+    def forward_g2t(self, src_input):
+        
         if torch.cuda.is_available():
             src_input = {k:v.cuda() if isinstance(v, torch.Tensor) else v for k,v in src_input.items()}
         outputs = self.model_gloss(input_ids=src_input['gloss_ids'], 
                                    attention_mask=src_input['attention_mask'],
-                                   return_dict=True, **kwargs)
+                                   return_dict=True)
         return outputs.logits
 
         
-    def forward(self, src_input, **kwargs):
+    def forward(self, *args, **kwargs):
+        if "src_input" in kwargs:
+            src_input = kwargs["src_input"]
+        else:
+            src_input = {
+                "gloss_ids" : args[0],
+                "attention_mask" : args[1],
+                "labels" : args[2],
+                "labels_attention_mask" : args[3]
+                
+            }
+        
+        src_input["gloss_ids"] = src_input["gloss_ids"].to(torch.long)    
+        
         if self.task == "clip":
             return self.forward_clip(src_input, **kwargs)
         elif self.task == "g2t":
-            return self.forward_g2t(src_input, **kwargs)
+            return self.forward_g2t(src_input)
         else:
             raise NotImplementedError(f"Task {self.task} is not supported")
     def generate(self,src_input, num_beams ):

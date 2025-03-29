@@ -175,7 +175,6 @@ class Logger:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.log_file = f"{log_dir}/{prefix}_{timestamp}.log"
 
-        logger.remove()  # Xóa cấu hình mặc định
         logger.add(sys.stdout, format="{time} {level} {message}", level="INFO")  # Log ra console
         logger.add(self.log_file, format="{time} {level} {message}", level="INFO", rotation="10MB")  # Log ra file
 
@@ -183,14 +182,12 @@ class Logger:
         
     def write(self, message):
         """Ghi log thay thế print(), hỗ trợ live writing"""
-        if message.strip():  # Bỏ qua dòng trống
-            logger.info(message.strip())
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(message.strip() + "\n")  # Ghi vào file ngay lập tức
-                f.flush()  # Đảm bảo ghi ngay
+        logger.info(message.strip())
+        with open(self.log_file, "a", encoding="utf-8") as f:
+            f.write(message.strip() + "\n")  # Ghi vào file ngay lập tức
+            f.flush()  # Đảm bảo ghi ngay
 
         sys.__stdout__.write(message)  # Ghi ra console ngay lập tức
-        sys.__stdout__.flush()
 
     def flush(self):
         """Flush dữ liệu (không cần thiết do đã gọi flush() trong write)"""
@@ -210,3 +207,80 @@ class Logger:
     def error(msg):
         """Ghi log mức ERROR"""
         logger.error(msg)
+
+
+import os
+import datetime
+import torch
+import sys
+import json
+from torch.utils.tensorboard import SummaryWriter
+from torchinfo import summary
+from torchviz import make_dot
+import netron
+
+class ModelLogger:
+    def __init__(self, log_dir, prefix, model, input_size=(1, 3, 224, 224)):
+   
+        self.log_dir = log_dir
+        os.makedirs(log_dir, exist_ok=True)
+
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        log_file = f"{log_dir}/{prefix}_{timestamp}.log"
+
+        self.log_file = open(log_file, "w", encoding="utf-8")
+        self.writer = SummaryWriter(log_dir)
+
+        self.model = model
+        self.input_size = input_size
+
+        if model:
+            self.log_model_summary()
+
+    def log_model_summary(self):
+        if not self.model:
+            return
+        model_summary = summary(self.model, input_size=self.input_size, 
+                                col_names=["input_size", "output_size", "num_params", "trainable", "mult_adds"],
+                                row_settings=("var_names", "depth"),
+                                dtypes=[torch.long, torch.long, torch.long, torch.bool], 
+                                depth=10, verbose=1)
+        with open(f"{self.log_dir}/model_summary.txt", "w", encoding="utf-8") as f:
+            f.write(str(model_summary))
+
+    def log_loss(self, loss, step):
+        log_message = f"Step {step}: Loss = {loss:.6f}"
+        self.write(log_message)
+        self.writer.add_scalar("Loss", loss, step)
+
+    def log_gradients(self, step):
+        if not self.model:
+            return
+        for name, param in self.model.named_parameters():
+            if param.grad is not None:
+                self.writer.add_histogram(f"Gradients/{name}", param.grad, step)
+
+    def visualize_computational_graph(self, sample_input):
+        if not self.model:
+            return
+        output = self.model(sample_input)
+        graph = make_dot(output, params=dict(self.model.named_parameters()))
+        graph.render(f"{self.log_dir}/model_graph", format="png", cleanup=True)
+        self.write("Computational graph đã được lưu tại 'model_graph.png'")
+
+    def save_and_visualize_model(self, filename="model.onnx"):
+        if not self.model:
+            return
+        dummy_input = torch.randn(*self.input_size)
+        torch.onnx.export(self.model, dummy_input, filename, opset_version=11)
+        netron.start(filename)
+
+    def write(self, message):
+        formatted_message = f"{datetime.datetime.now()} - {message}"
+        print(formatted_message)
+        self.log_file.write(formatted_message + "\n")
+        self.log_file.flush()
+
+    def close(self):
+        self.log_file.close()
+        self.writer.close()
