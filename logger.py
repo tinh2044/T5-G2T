@@ -265,7 +265,7 @@ class ModelLogger:
 
     def write(self, message):
         formatted_message = f"{datetime.datetime.now()} - {message}"
-        print(formatted_message)
+        # print(formatted_message)
         self.log_file.write(formatted_message + "\n")
         self.log_file.flush()
 
