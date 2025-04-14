@@ -10,9 +10,6 @@ import os
 
 
 class SmoothedValue(object):
-    """Track a series of values and provide access to smoothed values over a
-    window or the global series average.
-    """
 
     def __init__(self, window_size=20, fmt=None):
         if fmt is None:
@@ -171,7 +168,7 @@ class Logger:
             f.write(message.strip() + "\n")  # Ghi vào file ngay lập tức
             f.flush()  # Đảm bảo ghi ngay
 
-        sys.__stdout__.write(message)  # Ghi ra console ngay lập tức
+        # sys.__stdout__.write(message)  # Ghi ra console ngay lập tức
 
     def flush(self):
         """Flush dữ liệu (không cần thiết do đã gọi flush() trong write)"""

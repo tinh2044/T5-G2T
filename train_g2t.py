@@ -74,7 +74,7 @@ def get_args_parser():
     parser.add_argument('--decay-rate', '--dr', type=float, default=0.1, metavar='RATE',
                         help='LR decay rate (default: 0.1)')
     
-    parser.add_argument('--output_dir', default='./outputs',
+    parser.add_argument('--output_dir', default='./outputs/g2t',
                         help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cpu',
                         help='device to use for training / testing')

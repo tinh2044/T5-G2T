@@ -122,7 +122,7 @@ class GlossTextCLIP(nn.Module):
         src_input["gloss_ids"] = src_input["gloss_ids"].to(torch.long)    
         
         if self.task == "clip":
-            return self.forward_clip(src_input, **kwargs)
+            return self.forward_clip(src_input)
         elif self.task == "g2t":
             return self.forward_g2t(src_input)
         else:
