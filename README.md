@@ -175,11 +175,6 @@ model:
 
 ### Expected Results on Phoenix-2014-T
 | Metric | Score | Description |
-|--------|-------|-------------|
-| BLEU-4 | 15-25% | 4-gram BLEU score |
-| ROUGE-L | 35-45% | Longest common subsequence |
-| ROUGE-1 | 40-50% | Unigram overlap |
-| ROUGE-2 | 25-35% | Bigram overlap |
 
 ### Training Time
 - **CLIP Stage**: ~8-12 hours (4x V100 GPUs)
