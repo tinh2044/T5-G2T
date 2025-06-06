@@ -7,6 +7,7 @@
 
 A approach for Sign Language Translation that combines **T5 transformer architecture** with **contrastive learning (CLIP)** to translate gloss sequences into natural language text. Employs a novel two-stage training approach: contrastive pre-training for cross-modal representation learning, followed by fine-tuning for direct gloss-to-text translation.
 
+![](./images/t5-g2t.png)
 
 ## Requirements
 
