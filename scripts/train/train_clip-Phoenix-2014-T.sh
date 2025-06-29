@@ -51,5 +51,5 @@ python -m train_g2t \
     --output_dir $OUTPUT_DIR \
     --device $DEVICE \
     --seed $SEED \
-    --finetune $FINETUNE \
+    --finetune "$FINETUNE" \
     --num_workers $NUM_WORKERS \

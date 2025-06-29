@@ -11,6 +11,7 @@ tqdm
 opencv-python
 pillow
 transformers
+wandb
 datasets
 nltk
 spacy
