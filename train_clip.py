@@ -226,10 +226,10 @@ def main(args, config):
     # Initialize start_epoch to 0
     start_epoch = 0
 
-    logger.info(f"Creating dataset:")
+    logger.info("Creating dataset:")
     tokenizer = T5Tokenizer.from_pretrained(config["model"]["tokenizer"])
 
-    logger.info(f"Creating model:")
+    logger.info("Creating model:")
     model = GlossTextCLIP(config=config, task="clip")
     model = model.to(device)
 
@@ -379,11 +379,12 @@ def main(args, config):
             epoch,
             loss_scaler,
             logger,
+            wandb_run,
         )
         lr_scheduler.step(epoch)
 
         if args.output_dir:
-            checkpoint_paths = [output_dir / f"checkpoint.pth"]
+            checkpoint_paths = [output_dir / "checkpoint.pth"]
             for checkpoint_path in checkpoint_paths:
                 utils.save_on_master(
                     {
@@ -403,7 +404,7 @@ def main(args, config):
         if min_loss > dev_stats["loss"]:
             min_loss = dev_stats["loss"]
             if args.output_dir:
-                checkpoint_paths = [output_dir / f"best_checkpoint.pth"]
+                checkpoint_paths = [output_dir / "best_checkpoint.pth"]
                 for checkpoint_path in checkpoint_paths:
                     utils.save_on_master(
                         {
@@ -450,6 +451,7 @@ def train_one_epoch(
     epoch: int,
     loss_scaler,
     logger: Logger,
+    wandb_run=None,
 ):
     model.train(True)
 
@@ -469,6 +471,35 @@ def train_one_epoch(
         total_loss = (loss_imgs + loss_texts) / 2.0
         loss_scaler(total_loss, optimizer, step, logger=None)
 
+        # Log gradients to Weights & Biases
+        if wandb_run is not None and (step + 1) % 50 == 0:  # Log every 50 steps
+            try:
+                grad_dict = {}
+                for name, param in model.named_parameters():
+                    if param.grad is not None:
+                        grad_norm = param.grad.norm().item()
+                        param_norm = param.norm().item()
+                        grad_dict[f"gradients/{name}_grad_norm"] = grad_norm
+                        grad_dict[f"gradients/{name}_param_norm"] = param_norm
+                        grad_dict[f"gradients/{name}_grad_param_ratio"] = grad_norm / (
+                            param_norm + 1e-8
+                        )
+
+                # Log gradient statistics
+                all_grad_norms = [
+                    param.grad.norm().item()
+                    for param in model.parameters()
+                    if param.grad is not None
+                ]
+                if all_grad_norms:
+                    grad_dict["gradients/global_grad_norm"] = np.mean(all_grad_norms)
+                    grad_dict["gradients/max_grad_norm"] = np.max(all_grad_norms)
+                    grad_dict["gradients/min_grad_norm"] = np.min(all_grad_norms)
+
+                wandb_run.log(grad_dict, step=epoch * len(data_loader) + step)
+            except Exception as e:
+                logger.warning(f"Failed to log gradients to wandb: {e}")
+
         loss_value = total_loss.item()
         if not math.isfinite(loss_value):
             logger.warning("Loss is {}, stopping training".format(loss_value))
@@ -476,6 +507,19 @@ def train_one_epoch(
 
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+
+        # Log training metrics to Weights & Biases per step
+        if wandb_run is not None and (step + 1) % 10 == 0:  # Log every 10 steps
+            try:
+                step_metrics = {
+                    "train/loss_step": loss_value,
+                    "train/lr_step": optimizer.param_groups[0]["lr"],
+                    "train/loss_imgs_step": loss_imgs.item(),
+                    "train/loss_texts_step": loss_texts.item(),
+                }
+                wandb_run.log(step_metrics, step=epoch * len(data_loader) + step)
+            except Exception as e:
+                logger.warning(f"Failed to log step metrics to wandb: {e}")
 
     metric_logger.synchronize_between_processes()
     logger.info(f"Averaged stats: {metric_logger}")
@@ -545,9 +589,7 @@ def evaluate(dev_dataloader, model, criterion, epoch, logger: Logger, wandb_run)
 if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    parser = argparse.ArgumentParser(
-        "Visual-Language-Pretraining (VLP) scripts", parents=[get_args_parser()]
-    )
+    parser = argparse.ArgumentParser("Train CLIP model", parents=[get_args_parser()])
     args = parser.parse_args()
 
     with open(args.config, "r+", encoding="utf-8") as f:

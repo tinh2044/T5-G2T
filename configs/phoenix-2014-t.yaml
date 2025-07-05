@@ -7,4 +7,3 @@ training:
 model:
   tokenizer: google-t5/t5-base
   transformer: google-t5/t5-base
-  sign_proj: True

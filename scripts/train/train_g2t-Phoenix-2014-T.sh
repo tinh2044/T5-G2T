@@ -27,6 +27,11 @@ FINETUNE="./outputs/phoenix-2014-T.pth"
 NUM_WORKERS=0
 CONFIG="./configs/phoenix-2014-t.yaml"
 
+# Weights & Biases Configuration
+USE_WANDB="--use_wandb"
+WANDB_PROJECT="T5-G2T"
+WANDB_RUN_NAME="g2t_phoenix_2014_T"
+
 # Run the Python script with arguments
 python -m train_g2t \
     --config $CONFIG \
@@ -53,3 +58,6 @@ python -m train_g2t \
     --seed $SEED \
     --finetune $FINETUNE \
     --num_workers $NUM_WORKERS \
+    $USE_WANDB \
+    --wandb_project $WANDB_PROJECT \
+    --wandb_run_name $WANDB_RUN_NAME \
