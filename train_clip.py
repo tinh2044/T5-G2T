@@ -41,13 +41,19 @@ def get_args_parser():
     parser.add_argument("--batch-size", default=4, type=int)
     parser.add_argument("--epochs", default=80, type=int)
 
-    parser.add_argument(
+    # Distributed training arguments
+    dist_group = parser.add_argument_group(
+        "distributed", "distributed training options"
+    )
+    dist_group.add_argument(
         "--world_size", default=1, type=int, help="number of distributed processes"
     )
-    parser.add_argument(
+    dist_group.add_argument(
         "--dist_url", default="env://", help="url used to set up distributed training"
     )
-    parser.add_argument("--local_rank", default=0, type=int)
+    dist_group.add_argument(
+        "--local_rank", default=0, type=int, help="local rank for distributed training"
+    )
 
     parser.add_argument("--finetune", default="", help="finetune from checkpoint")
 
@@ -72,13 +78,6 @@ def get_args_parser():
         nargs="+",
         metavar="BETA",
         help="Optimizer Betas (default: [0.9, 0.98], use opt default)",
-    )
-    parser.add_argument(
-        "--momentum",
-        type=float,
-        default=0.9,
-        metavar="M",
-        help="SGD momentum (default: 0.9)",
     )
     parser.add_argument(
         "--weight-decay", type=float, default=0.0, help="weight decay (default: 0.05)"
