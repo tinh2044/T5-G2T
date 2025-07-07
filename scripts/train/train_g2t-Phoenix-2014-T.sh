@@ -30,6 +30,7 @@ CONFIG="./configs/phoenix-2014-t.yaml"
 USE_WANDB="--use_wandb"
 WANDB_PROJECT="T5-G2T"
 WANDB_RUN_NAME="g2t_phoenix_2014_T"
+# WANDB_API_KEY=""  # Uncomment and set your API key to avoid manual input
 
 # Run the Python script with arguments
 python -m train_g2t \
@@ -60,3 +61,4 @@ python -m train_g2t \
     $USE_WANDB \
     --wandb_project $WANDB_PROJECT \
     --wandb_run_name $WANDB_RUN_NAME \
+    ${WANDB_API_KEY:+--wandb_api_key $WANDB_API_KEY} \

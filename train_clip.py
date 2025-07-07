@@ -182,6 +182,12 @@ def get_args_parser():
         default=None,
         help="Run name for Weights & Biases. Defaults to auto-generated if not set.",
     )
+    parser.add_argument(
+        "--wandb_api_key",
+        type=str,
+        default=None,
+        help="Weights & Biases API key. If not provided, will prompt for input.",
+    )
 
     return parser
 
@@ -204,6 +210,31 @@ def main(args, config):
             raise ImportError(
                 "wandb library is not installed. Install it or run without --use_wandb."
             )
+
+        # Prompt for API key login
+        try:
+            # Check if already logged in
+            if not wandb.api.api_key:
+                if args.wandb_api_key:
+                    # Use API key from command line
+                    wandb.login(key=args.wandb_api_key)
+                    logger.info("Logged in to W&B using provided API key")
+                else:
+                    # Prompt for API key
+                    import getpass
+
+                    logger.info("Weights & Biases login required")
+                    api_key = getpass.getpass("Please enter your W&B API key: ")
+                    wandb.login(key=api_key)
+                    logger.info("Logged in to W&B successfully")
+            else:
+                logger.info("Already logged in to W&B")
+
+        except Exception as e:
+            logger.warning(f"W&B login failed: {e}")
+            logger.info("You can also login manually by running: wandb login")
+            raise
+
         wandb_run = wandb.init(
             project=args.wandb_project,
             name=args.wandb_run_name,
